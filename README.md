@@ -166,14 +166,69 @@ One final distinction: this implementation warns the user when the count exceeds
 
 ## How to deploy this — order of operations
 
-| # | Page (breadcrumb) | What to do | Why here |
-|---|---|---|---|
-| 1 | **All → System Definition → Script Includes → New** | name **`IncidentUtils`**, *Client callable* **true**, *Accessible from* **All application scopes**, Active | the client script cannot call it before it exists |
-| 2 | (same record) paste `getOpenIncidentCount()` | validate `sys_id` with `/^[0-9a-f]{32}$/i`, `GlideAggregate` COUNT on `incident` where `assigned_to` + `active = true`, return `'-1'` on bad input | cheapest place to reject bad input |
-| 3 | **All → System UI → Client Scripts → New** | table **Incident**, type **onChange**, field **Assigned to**, paste `onChange(control, oldValue, newValue, isLoading, isTemplate)` | it fires when the field commits — i.e. exactly "assignee changed" |
-| 4 | (same record) guards | `if (isLoading || isTemplate || !newValue) return;` | skips form load, template application and unassignment |
-| 5 | (same record) stale-response guard | `if (g_form.getValue(fieldName) !== newValue) return;` inside the callback | two quick assignee changes out of order would show the wrong count |
-| 6 | Incident form → test | assign a user who has > 10 active incidents | the only real test |
+Each step is one page to stand on: what to have ready first, the fields to fill, and the one suggestion that saves
+rework.
+
+### Step 1 — the Script Include
+> **Breadcrumb:** `All → System Definition → Script Includes → New`
+
+- **Prerequisite:** nothing, but know which scope you are in: a global app uses `AbstractAjaxProcessor`, a scoped app
+  uses `global.AbstractAjaxProcessor`.
+- **Fields to fill:** `Name` = `IncidentUtils` · `Client callable` = **true** (otherwise the client cannot see it at
+  all) · `Accessible from` = *All application scopes* · `Active` = true · `Script` = `getOpenIncidentCount()`.
+- **Suggestion:** keep the record global and the function narrow. *Client callable* means **any logged-in user** can
+  invoke it, so return a count and nothing else — never a record list.
+- **Checkpoint:** the Script Include saves; *Client callable* shows true.
+
+### Step 2 — the server-side body
+> **Breadcrumb:** the `Script` field of the record from step 1
+
+- **Prerequisite:** step 1.
+- **Fields to fill (what the code must do):** reject a bad `sys_id` with `/^[0-9a-f]{32}$/i` and return `'-1'` ·
+  `GlideAggregate` + `addAggregate('COUNT')` on `incident`, encoded query `assigned_to=<sys_id>^active=true` ·
+  answer = the count as a string.
+- **Suggestion:** validate on the server even though the client "cannot" send junk — the endpoint is callable
+  directly, and `'-1'` gives the client something it can distinguish from `0`.
+- **Checkpoint:** hardcoding a known user's `sys_id` and calling it returns their open count.
+
+### Step 3 — the onChange client script
+> **Breadcrumb:** `All → System UI → Client Scripts → New`
+
+- **Prerequisite:** step 1 saved and *Client callable* verified.
+- **Fields to fill:** `Name` = Assignee workload warning · `Table` = **Incident** · `UI Type` = *All* (or Desktop) ·
+  `Type` = **onChange** · `Field name` = **Assigned to** · `Active` = true · `Script` =
+  `onChange(control, oldValue, newValue, isLoading, isTemplate)`.
+- **Suggestion:** do not hard-code `'assigned_to'` — read it from `control.name`, so the same script works on
+  *Assignment group* or any user-reference field later.
+- **Checkpoint:** the script saves against the Incident table with the right field.
+
+### Step 4 — the early-exit guards
+> **Breadcrumb:** the `Script` field from step 3
+
+- **Prerequisite:** step 3.
+- **Fields to fill:** first line = `if (isLoading || isTemplate || !newValue) return;`.
+- **Suggestion:** these three guards remove the three false alarms people report as bugs: a warning on every form
+  load (`isLoading`), on every template application (`isTemplate`), and on unassigning (`!newValue`).
+- **Checkpoint:** opening the form produces no message.
+
+### Step 5 — the stale-response guard
+> **Breadcrumb:** inside the `getXMLAnswer` callback
+
+- **Prerequisite:** step 4.
+- **Fields to fill:** `if (g_form.getValue(control.name) !== newValue) return;` before touching `g_form`.
+- **Suggestion:** `getXMLAnswer()` is **asynchronous** — two fast assignee changes can come back out of order and show
+  the count for the wrong person. This one line makes that impossible; `getXMLWait()` would also "fix" it by freezing
+  the form, which is worse.
+- **Checkpoint:** changing the assignee twice quickly never shows the first user's count.
+
+### Step 6 — prove it on a real record
+> **Breadcrumb:** any Incident form
+
+- **Prerequisite:** a test user with **11 or more** active incidents.
+- **Fields to fill:** none.
+- **Suggestion:** test all three outcomes, not just the happy one — 11 incidents (message), 0 incidents (no message),
+  empty field (no message, no console error).
+- **Checkpoint:** `<name> currently has 11 active incidents assigned (threshold: 10)…` appears.
 
 ## Parameters to consider
 
