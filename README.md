@@ -51,8 +51,11 @@ One final distinction: this implementation warns the user when the count exceeds
 
 
 
-# servicenow_scriptincludesampleBETTER
-servicenow_scriptincludesampleBETTER
+# glideajax-scriptinclude-onchange-incident-warning
+
+GlideAjax Script Include (`IncidentUtils`) + onChange Client Script on `assigned_to`: warns the user
+when the selected assignee already has more than 10 active incidents.
+Warn only - it does not block the assignment (hard enforcement needs server-side validation).
 
 
 Here is the consolidated, revised implementation. It incorporates the feedback while preserving the correct GlideAjax pattern and efficient server-side aggregation.
