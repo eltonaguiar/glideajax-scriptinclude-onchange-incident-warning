@@ -164,6 +164,22 @@ One final distinction: this implementation warns the user when the count exceeds
 
 ---
 
+## Before you start — prerequisites checklist
+
+Tick these off before step 1. Everything here is a hard prerequisite unless marked optional — the common
+failures are a missing item from this list, not a step done wrong.
+
+- [ ] Permission to create a **Script Include** and a **Client Script** (developer role or delegated admin)
+- [ ] You know your **scope**: global app → `AbstractAjaxProcessor`; scoped app → `global.AbstractAjaxProcessor`.
+      Choosing wrong throws at *call* time, not at save time
+- [ ] Users can **read `incident`** — `GlideAggregate` respects ACLs, so an assignee who cannot read incidents gets
+      `0`, not an error
+- [ ] A **test user with 11 or more active incidents** for the final check
+- [ ] Agreement on the **threshold** (`10`). If the business wants to tune it, plan a `sys_properties` entry now
+      instead of editing script later
+
+---
+
 ## How to deploy this — order of operations
 
 Each step is one page to stand on: what to have ready first, the fields to fill, and the one suggestion that saves
