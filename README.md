@@ -161,3 +161,46 @@ Scope adjustment: The code above uses `global.AbstractAjaxProcessor`, appropriat
 - Security: Client-callable does not mean unrestricted access should be allowed. Apply appropriate authorization if workload counts are sensitive.
 
 One final distinction: this implementation warns the user when the count exceeds 10; it does not prevent the assignment. A hard enforcement requirement needs server-side validation as well.
+
+---
+
+## How to deploy this — order of operations
+
+| # | Page (breadcrumb) | What to do | Why here |
+|---|---|---|---|
+| 1 | **All → System Definition → Script Includes → New** | name **`IncidentUtils`**, *Client callable* **true**, *Accessible from* **All application scopes**, Active | the client script cannot call it before it exists |
+| 2 | (same record) paste `getOpenIncidentCount()` | validate `sys_id` with `/^[0-9a-f]{32}$/i`, `GlideAggregate` COUNT on `incident` where `assigned_to` + `active = true`, return `'-1'` on bad input | cheapest place to reject bad input |
+| 3 | **All → System UI → Client Scripts → New** | table **Incident**, type **onChange**, field **Assigned to**, paste `onChange(control, oldValue, newValue, isLoading, isTemplate)` | it fires when the field commits — i.e. exactly "assignee changed" |
+| 4 | (same record) guards | `if (isLoading || isTemplate || !newValue) return;` | skips form load, template application and unassignment |
+| 5 | (same record) stale-response guard | `if (g_form.getValue(fieldName) !== newValue) return;` inside the callback | two quick assignee changes out of order would show the wrong count |
+| 6 | Incident form → test | assign a user who has > 10 active incidents | the only real test |
+
+## Parameters to consider
+
+| Parameter | Where | Effect |
+|---|---|---|
+| `threshold = 10` | client script | the warning boundary. Keep it a constant, or move it to a `sys_properties` entry so the business can tune it without a code change |
+| the field | client script (`control.name`) | works on any user-reference field, not just `assigned_to` — do not hard-code the name |
+| `active = true` | Script Include | "active" is not "open" in every process; swap in the state filter your business uses |
+| *Client callable* | Script Include | required — and it also means any logged-in user can call it, so keep the answer non-sensitive |
+| scope | Script Include | scoped app → `global.AbstractAjaxProcessor`; global app → `AbstractAjaxProcessor`. A mismatch throws at call time |
+| warn vs enforce | design | this **warns only**; hard enforcement belongs in a `before` business rule |
+
+## Things to watch out for
+
+- `getXMLAnswer()` is **asynchronous** — anything that needs `count` must live inside the callback. (`getAnswer()` is
+  only valid after a blocking `getXMLWait()`, which freezes the form; avoid it.)
+- `g_form.clearMessages()` clears **all** form messages, not only this warning.
+- The server returns `'-1'` for invalid input; the client must ignore negative counts or it warns on `-1`.
+- `parseInt` + `isNaN` before comparing, or an empty answer silently becomes `0`.
+- Client-callable + `GlideAggregate` means a COUNT runs on every assignee change — trivial at 12 K incidents, worth
+  caching if the table reaches millions of rows.
+
+## Validate it (5 minutes, no code)
+
+1. Give a test user **11 active** incidents.
+2. Open any incident and set **Assigned to** to that user.
+3. Expect: `<name> currently has 11 active incidents assigned (threshold: 10). Please consider the workload.`
+4. Assign to a user with 0 incidents → **no** message (not an empty one).
+5. Clear the field → no message and no console error (`isLoading` / `!newValue` guards).
+6. Optional: change `threshold` to `5` and repeat — the message must fire at 6, proving the constant drives it.
